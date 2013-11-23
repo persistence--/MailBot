@@ -26,7 +26,7 @@ MASTER_NICK = "" # Your real nick goes here to control the bot.
 MASTER_NICK_PASSWORD = "" # Password used to authenticate admin commands.
 
 # Auto-join these rooms on connect. It's ok to leave empty.
-ROOMS = [ ] 
+ROOMS = [] 
 
 # Delay in seconds between multiple messages.
 DELAY = 0.5
@@ -248,7 +248,7 @@ def listen(s):
 
 
     while s:
-        #try:
+        try:
             # Read received data into data_buffer, and in case we read in more
             # than one message, split it for each line.
             data_buffer = s.recv(1024).split("\n")
