@@ -1,8 +1,15 @@
-MailBot v0.2
-============
+MailBot v0.21
+=============
 by: **persistence**
 
 An IRC bot used to send messages to one or more users who are offline. 
+
+Features:
+---------
+* **Group Messaging** - Send messages to user-defined groups of nicks.
+
+* **White/Blacklists** - Use whitelists and blacklists to enable or disable messaging from specific users.
+
 
 Features to add:
 ----------------
@@ -14,11 +21,15 @@ Features to add:
 
 * **Mention Logging** - Log every time my nick (or the nick of a registered user) is mentioned in a room so I will know if someone was looking for me, but maybe has not left me a message with MailBot.
 
-* **Group Messaging** - Send messages to user-defined groups of nicks.
-
 * **Improve nick black/whitelisting** - Black/whitelist needs to be updatable with an admin command and saved to disk.
 
 * **Password protection** - Give users the ability to protect their messages with a password instead of authenticating by nickname only.
+
+
+Known bugs:
+-----------
+* Instant notification is still case sensitive. It needs to be fixed so if a username's case has changed and that user is in MailBot's room, the user will still get a notification.
+
 
 Old bugs fixed in this version:
 -------------------------------
