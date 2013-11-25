@@ -26,13 +26,16 @@ MASTER_NICK = "persistence" # Your real nick goes here to control the bot.
 MASTER_NICK_PASSWORD = "" # Password used to authenticate admin commands.
 
 # Auto-join these rooms on connect. It's ok to leave empty.
-ROOMS = [ ] 
+ROOMS = [  ] 
 
 # Delay in seconds between multiple messages.
-DELAY = 0.5
+DELAY = 0.50
 
 # Delay between initial connection commands to the server.
 STARTUP_DELAY = 1.0
+
+# Whether or not broadcast a greeting in the room when users join.
+GREET_JOINS = False
 
 # Groups of nicks for sending mass messages.
 # Each group's key is the name of that group.
@@ -45,6 +48,7 @@ BLACKLISTED_NICKS = []
 
 ENABLE_WHITELIST = False
 WHITELISTED_NICKS = []
+#WHITELISTED_NICKS = NICK_GROUPS["staff"]
 
 ##############################################################################
 ## END OF USER SETTINGS                                                     ##
@@ -65,7 +69,16 @@ ENABLE_IRC_COMMANDS = True
 sendLock = threading.Semaphore(value=1)
 
 # All nicknames are converted to lowercase to fix case-sensitivity.
-MASTER_NICK = MASTER_NICK.lower()
+#MASTER_NICK = MASTER_NICK.lower()
+
+# Returns True if a string is just numbers and a single dot.
+def isfloat(s):
+    dots = len(s.split(".")) - 1
+    s = s.replace(".", "")
+    
+    if dots <= 1 and s.isdigit(): return True
+    else: return False
+
 
 # Kills all threads
 def really_quit():
@@ -81,7 +94,7 @@ def really_quit():
 
 # Returns a human readable timestamp string: YYYY-MM-DD hh:mm:ss
 def timestamp():
-    timestamp = "%(year)s-%(month)s-%(day)s %(hour)s:%(minute)s:%(second)s" % {
+    timestamp = "%(year)04d-%(month)02d-%(day)02d %(hour)02d:%(minute)02d:%(second)02d" % {
                 "year": datetime.now().year,
                 "month": datetime.now().month,
                 "day": datetime.now().day,
@@ -305,19 +318,25 @@ def listen(s):
                     ( ".org" in message["data"].lower() ),
                     ( ".net" in message["data"].lower() ),
                     ( ".us" in message["data"].lower() ),
-                    ( MASTER_NICK in message["data"].lower() ),
+                    ( ".uk" in message["data"].lower() ),
+                    ( ".au" in message["data"].lower() ),
+                    ( ".nz" in message["data"].lower() ),
+                    ( MASTER_NICK.lower() in message["data"].lower() ),
                 ]
 
-                if (any(interesting_things) and message["type"] == "PRIVMSG" and
-                    message["sender"] != MASTER_NICK and message["sender"] != HANDLE):
-                    log_entry = "[%(timestamp)s] %(sender)s->%(recipient)s: %(message)s" % {
-                        "timestamp": timestamp(),
-                        "sender": message["sender"],
-                        "recipient": message["recipient"],
-                        "message": message["data"],
-                    }
+                if ( message["type"] == "PRIVMSG" 
+                     and message["sender"] != MASTER_NICK.lower()
+                     and message["sender"] != HANDLE ):
 
-                    log_append(log_entry)
+                    if (any(interesting_things)):
+                        log_entry = "[%(timestamp)s] %(sender)s->%(recipient)s: %(message)s" % {
+                            "timestamp": timestamp(),
+                            "sender": message["sender"],
+                            "recipient": message["recipient"],
+                            "message": message["data"],
+                        }
+
+                        log_append(log_entry)
 
 
                 # Since the white/blacklists are located below, messages from
@@ -334,11 +353,11 @@ def listen(s):
                 if message["type"] == "JOIN":
 
                     # Greet all users who enter the room.
-                    vsend(privmsg(message["recipient"], "Hello, %s." % message["sender"]))
+                    if GREET_JOINS:
+                        vsend(privmsg(message["recipient"], "Hello, %s." % message["sender"]))
 
                     # Notify the user if they have any new messages.
-                    messages = read_messages(message["sender"])
-                    message_count = len(messages)
+                    message_count = len(read_messages(message["sender"]))
 
                     if message_count > 0:
                         vsend(privmsg(message["sender"], "*** You have %d messages. Type \"read\" to retrieve. ***" % message_count))
@@ -374,13 +393,41 @@ def listen(s):
 
                         user_commands = lower(["help", "tell", "read", "erase"])
 
-                        # Respond to anything with message count if the user has
-                        # messages waiting. Anything except "erase" or "tell".
-                        message_count = len(read_messages(message["sender"]))
-                        if message_count > 0 and command != "erase" and \
-                            command != "tell":
-                            vsend(privmsg(message["sender"], "*** You have %d messages. ***" % message_count))
-                            time.sleep(DELAY)
+                        # Administrative commands
+                        if (message["sender"].lower() == MASTER_NICK.lower() and
+                            command[0] == "!"):
+
+                            # !interesting : Print the last 20 interesting things.
+                            if command == "!interesting":
+                                things = file2list(sys.argv[0] + ".txt")
+
+                                parameter_list = parameters.split(" ")
+
+                                # First parameter is the number of things to see.
+                                if parameters.split(" ")[0].isdigit():
+                                    number_of_things = int(parameters.split(" ")[0])
+                                else:
+                                    number_of_things = 20
+
+                                if len(things) > number_of_things:
+                                    things = things[(0 - number_of_things):]
+
+                                # Second parameter is the delay between messages.
+                                new_delay = DELAY
+
+                                if len(parameter_list) > 1:
+                                    if isfloat(parameter_list[1]):
+                                        new_delay = float(parameter_list[1])
+                                    
+
+                                # Display the interesting things.
+                                vsend(privmsg(message["sender"], "*** Displaying %s interesting lines. Delay between each = %s seconds. ***" % ( len(things), new_delay ) ) )
+
+                                for thing in things:
+                                    vsend(privmsg(message["sender"], thing))
+                                    time.sleep(new_delay)
+
+                            continue
 
                         # Respond to unrecognized commands.
                         if command.lower() not in user_commands:
@@ -394,17 +441,24 @@ def listen(s):
                             # "help" displays help.
                             if command == "help":
                                 help_text = """Available commands:
-                                               %s
+                                               %(commands)s
                                                Send a user a message: tell username such and such message
                                                Send a group of users a message: tell @groupname such and such message
                                                Read your messages: read
                                                Erase all your messages: erase
                                                ---
-                                               Currently available groups are: %s
+                                               Currently available groups are: %(groups)s
                                                ---
                                                Be aware that the owner of this bot (like the owner of this server) can read all the messages you send, so please do not send anything private or sensitive.
                                                ---
-                                               Please do not use this bot to spam other users or you will be added to the blacklist.""" % (user_commands, NICK_GROUPS.keys())
+                                               %(handle)s is run by me, %(master_nick)s. Please let me know if you want to be removed from %(handle)s's alerts or group messages. You can even use %(handle)s to contact me!
+                                               ---
+                                               Do not use this bot to spam other users or you will be added to the blacklist.""" % {
+                                               "commands": user_commands, 
+                                               "groups": NICK_GROUPS.keys(),
+                                               "handle": HANDLE,
+                                               "master_nick": MASTER_NICK,
+                                               }
 
                                 for line in help_text.split("\n"):
                                     if line.strip() != "":
@@ -448,8 +502,8 @@ def listen(s):
                                 user_messages = read_messages(message["sender"])
                                 message_count = len(user_messages)
 
-                                vsend(privmsg(message["sender"], "*** You have %d messages. ***" % message_count))
-                                time.sleep(DELAY)
+                                # vsend(privmsg(message["sender"], "*** You have %d messages. ***" % message_count))
+                                # time.sleep(DELAY)
 
                                 for m in user_messages:
                                     vsend(privmsg(message["sender"], m))
@@ -470,6 +524,13 @@ def listen(s):
 
                             if user_error:
                                 vsend(privmsg(message["sender"], "There was an error with your request. Please try again or say \"help\" for assistance."))
+
+                        # Respond to anything with message count if the user has
+                        # messages waiting. Anything except "erase" or "tell".
+                        message_count = len(read_messages(message["sender"]))
+                        if command not in user_commands or command == "read":
+                            vsend(privmsg(message["sender"], "*** You have %d messages. ***" % message_count))
+                            time.sleep(DELAY)
 
         except Exception, e:
             print "-----\nERROR in the receiving thread:"

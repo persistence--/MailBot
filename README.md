@@ -1,4 +1,4 @@
-MailBot v0.21
+MailBot v0.22
 =============
 by: **persistence**
 
@@ -10,6 +10,23 @@ Features:
 
 * **White/Blacklists** - Use whitelists and blacklists to enable or disable messaging from specific users.
 
+* **URL Logging** - Log all URL's sent to rooms the bot is in so I don't miss any cool stuff shared while I'm gone.
+
+* **Mention logging for the owner** - Log each time the owner's name is mentioned so they will know if someone was looking for them but did not leave a message.
+
+
+Advantages over memoserv:
+-------------------------
+* More obvious interface for new users unfamiliar with IRC.
+
+* Nicks do not need to be registered/identified to send and receive messages. (Could be a good or a bad thing depending on your perspective.)
+
+* Can be run by a non-operator or non-server-admin user independently of the underlying IRC server.
+
+* Non-messaging features like mention and URL logging.
+
+* I had fun and got lots of experience building it, and it works. I don't have to justify myself to you. :P
+
 
 Features to add:
 ----------------
@@ -17,9 +34,7 @@ Features to add:
 
 * **Configuration file** - Configuration needs to be saved in a separate file so I don't accidentally upload my IRC credentials to github. :P
 
-* **URL Logging** - Log all URL's sent to rooms the bot is in so I don't miss any cool stuff while I'm gone.
-
-* **Mention Logging** - Log every time my nick (or the nick of a registered user) is mentioned in a room so I will know if someone was looking for me, but maybe has not left me a message with MailBot.
+* **Mention Logging** - Log every time the nick of a registered user is mentioned in a room so they will know if someone was looking for them, but maybe has not left me a message with MailBot.
 
 * **Improve nick black/whitelisting** - Black/whitelist needs to be updatable with an admin command and saved to disk.
 
@@ -28,11 +43,15 @@ Features to add:
 
 Known bugs:
 -----------
-* Instant notification is still case sensitive. It needs to be fixed so if a username's case has changed and that user is in MailBot's room, the user will still get a notification.
+* **Immediate** notification is still case sensitive. It needs to be fixed so if a username's case has changed and that user is in MailBot's room, the user will still get a notification. Notification on JOIN is still working properly.
+
+* The data-receiving thread needs to be givng it's own function that reads data and then spits it back out to other data-handling threads. This will keep the bot from getting bogged down with requests from just one user.
 
 
 Old bugs fixed in this version:
 -------------------------------
+* Timestamps now force two digit minimum for all fields.
+
 * Data needs to break at \n's because I occasionally read in two lines at once when there is excessive data.
 
 * Nicks need to be case-sensitive when sent to the server, but for message storage, make them all lower-case.
