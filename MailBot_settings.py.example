@@ -1,0 +1,52 @@
+#!/usr/bin/env python
+
+settings = {  ###### USER-DEFINED SETTINGS START BELOW ################
+
+# The server and port the bot should connect to.
+"SERVER": "www.ircserver.com",
+"PORT": 6667,
+
+# The bot's name on the server. Also used as username and real name.
+"HANDLE": "MailBot",
+
+# The password for the bot to identify itself.
+# This should be "" if the bot's nick is not registered
+"HANDLE_PASSWORD": "",
+
+# The nick of the bot's owner. This user will be able to send the bot commands.
+# This user will also receive a private message from the bot once the bot
+# connects to the server.
+"MASTER_NICK": "yournickhere", # Your real nick goes here to control the bot.
+"MASTER_NICK_PASSWORD": "", # Password used to authenticate admin commands.
+
+# Auto-join these rooms on connect. It's ok to leave empty.
+"ROOMS": [ "#bots" ], 
+
+# Delay in seconds between multiple messages.
+"DELAY": 0.50,
+
+# Delay between initial connection commands to the server.
+"STARTUP_DELAY": 1.0,
+
+# Whether or not broadcast a greeting in the room when users join.
+"GREET_JOINS": False,
+
+# Groups of nicks for sending mass messages.
+# Each group's key is the name of that group.
+# It's value is a list containing all the members.
+"NICK_GROUPS": {
+    "simpsons": [ "homer", "marge", "bart", "lisa", "maggie" ],
+},
+
+# Blacklist and whitelist of users who can send commands to the bot.
+"ENABLE_BLACKLIST": False,
+"BLACKLISTED_NICKS": [ "mr_burns", "smithers", "flanders", ],
+
+"ENABLE_WHITELIST": False,
+"WHITELISTED_NICKS": [ "lenny", "carl", ],
+
+} # END OF SETTINGS ####################
+
+
+if __name__ == "__main__":
+    print "You can't run this file, dummy! This is just settings!"

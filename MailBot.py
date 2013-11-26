@@ -4,61 +4,26 @@
 ##  MailBot  ##  created by: persistence                                    ##
 ##############################################################################
 
-##############################################################################
-##  USER SETTINGS GO HERE                                                   ##
-##############################################################################
-
-# The server and port the bot should connect to.
-SERVER = ""
-PORT = 6667
-
-# The bot's name on the server. Also used as username and real name.
-HANDLE = "MailBot"
-
-# The password for the bot to identify itself.
-# This should be "" if the bot's nick is not registered
-HANDLE_PASSWORD = "" 
-
-# The nick of the bot's owner. This user will be able to send the bot commands.
-# This user will also receive a private message from the bot once the bot
-# connects to the server.
-MASTER_NICK = "persistence" # Your real nick goes here to control the bot.
-MASTER_NICK_PASSWORD = "" # Password used to authenticate admin commands.
-
-# Auto-join these rooms on connect. It's ok to leave empty.
-ROOMS = [  ] 
-
-# Delay in seconds between multiple messages.
-DELAY = 0.50
-
-# Delay between initial connection commands to the server.
-STARTUP_DELAY = 1.0
-
-# Whether or not broadcast a greeting in the room when users join.
-GREET_JOINS = False
-
-# Groups of nicks for sending mass messages.
-# Each group's key is the name of that group.
-# It's value is a list containing all the members.
-NICK_GROUPS = {}
-
-# Blacklist and whitelist of users who can send commands to the bot.
-ENABLE_BLACKLIST = False
-BLACKLISTED_NICKS = []
-
-ENABLE_WHITELIST = False
-WHITELISTED_NICKS = []
-#WHITELISTED_NICKS = NICK_GROUPS["staff"]
-
-##############################################################################
-## END OF USER SETTINGS                                                     ##
-##############################################################################
-
 import socket       # To build the connection.
 import threading    # For the listening thread.
 import time         # For delays between commands on connect.
 import sys          # For sys.exit().
 from datetime import datetime   # For timestamps.
+
+# Import user settings by creating global variables from all the keys in the
+# settings dictionary from MailBot_settings.py
+import MailBot_settings 
+settings = MailBot_settings.settings
+
+for variable in settings.keys():
+    value = settings[variable]
+
+    if type(value) == type("string"):
+        value = '"%s"' % value
+    
+    set_value = "global %s ; %s = %s" % (variable, variable, value)
+
+    exec set_value
 
 
 # Global variables that should not be changed by the user. (Not settings.)
@@ -396,6 +361,12 @@ def listen(s):
                         # Administrative commands
                         if (message["sender"].lower() == MASTER_NICK.lower() and
                             command[0] == "!"):
+
+                            # !quit : QUIT
+                            if command == "!quit":
+                                s.send("QUIT\r\n")
+                                sys.exit()
+
 
                             # !interesting : Print the last 20 interesting things.
                             if command == "!interesting":
