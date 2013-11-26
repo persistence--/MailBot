@@ -24,14 +24,12 @@ An IRC bot used to send messages to one or more users who are offline.
 
 * Can be run by a non-operator or non-server-admin user independently of the underlying IRC server.
 
-* Non-messaging features like mention and URL logging.
-
-* I am having fun and getting lots of experience building it (and it works). I don't have to justify myself to you. :P
+* Non-messaging features like mention logging and URL logging.
 
 
 ## Features to add:
 
-* **Auto-reconnect** (or resurrect) - If MailBot is disconnected from the server, it currently has no way to reconnect. It needs to automatically reconnect if disconnected for any reason (possibly after a delay).
+* **Auto-reconnect** (or resurrect) - If MailBot is disconnected from the server, it currently has no way to reconnect. It needs to automatically reconnect if disconnected for any reason (kick/error). Reconnect should happen possibly after a delay.
 
     Possible solution example:
 
@@ -52,6 +50,8 @@ An IRC bot used to send messages to one or more users who are offline.
             global KEEP_RUNNING
             KEEP_RUNNING = False
             sys.exit()
+
+* **NickServ/WHOIS verification** - Verify user identities (if that user is registered) before allowing them to send/receive messages.
 
 * **User limits** - There needs to be a limit to how fast a user can send messages to another user.
 
