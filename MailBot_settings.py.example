@@ -49,4 +49,4 @@ settings = {  ###### USER-DEFINED SETTINGS START BELOW ################
 
 
 if __name__ == "__main__":
-    print "You can't run this file, dummy! This is just settings!"
+    print "You're doing it wrong." 
