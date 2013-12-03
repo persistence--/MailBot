@@ -10,6 +10,9 @@ import time         # For delays between commands on connect.
 import sys          # For sys.exit().
 from datetime import datetime   # For timestamps.
 
+from lib.data_manipulation import *
+from lib.irc import *
+
 # Import user settings by creating global variables from all the keys in the
 # settings dictionary from MailBot_settings.py
 import MailBot_settings 
@@ -31,18 +34,12 @@ ENABLE_IRC_COMMANDS = True
 
 # This semaphore keeps multiple streams of data from being sent
 # simultaneously.
-sendLock = threading.Semaphore(value=1)
+#sendLock = threading.Semaphore(value=1)
 
 # All nicknames are converted to lowercase to fix case-sensitivity.
 #MASTER_NICK = MASTER_NICK.lower()
 
-# Returns True if a string is just numbers and a single dot.
-def isfloat(s):
-    dots = len(s.split(".")) - 1
-    s = s.replace(".", "")
-    
-    if dots <= 1 and s.isdigit(): return True
-    else: return False
+
 
 
 # Kills all threads
@@ -68,14 +65,6 @@ def timestamp():
                 "second": datetime.now().second, }
     return timestamp   
          
-
-# Lowercases all strings in a list.
-def lower(l):
-    new_list = []
-    for item in l:
-        new_list.append(str(item).lower())
-    return new_list
-
 
 # Logs messages that are sent directly to the bot (as opposed to
 # the room/channel) to a file. I did this to examine hack attempts.
@@ -147,83 +136,273 @@ def clear_messages(nick):
     f.write('')
     f.close
 
+# Handle received PRIVMSG's
+def privmsg_actions(s, message):
+    # Break up the message data into the command (the first word)
+    # and the parameters (all remaining words).
 
-# Given a string of data from the IRC server, returns a dictionary containing
-# all the relevant parts of that string.
-#
-#               # These are valid for all messages.
-# irc_message { type:   MESSAGE TYPE IN ALL CAPS 
-#               data:   Message text/data
-#
-#               # These are valid for non-PING messages.
-#               sender_header:  Full sender string (nick!username@host)
-#               recipient:      The recipient of the message
-#
-#               # Valid for messages broadcast to a room:
-#               room:   The room to which the message was sent.
-#
-#               # These are valid for messages from other users.
-#               sender:             The user who sent the message
-#               sender_username:    Username of the sender               
-#               sender_host:        Hostname/IP of the sender
-# }
-def parse_irc_data(data):
-    irc_message = {}
-    parts = data.split(" ")
+    # Commands should be lowercase/case insensitive.
+    command = message["data"].split(" ")[0].lower()
 
-    if len(parts) == 2:
-        irc_message["type"] = parts[0].upper()  # PING
-        irc_message["data"] = parts[1][1:]  # Leading colon is removed.
-    elif len(parts) > 2: 
-        irc_message["sender_header"] = parts[0][1:] 
-        irc_message["type"] = parts[1].upper()
-        irc_message["recipient"] = parts[2]
-        if len(parts) > 3: irc_message["data"] = " ".join(parts[3:]).lstrip()[1:]
-
-        known_types = ['PRIVMSG', 'JOIN', 'PART', 'ACTION']
-
-        # Only parse messages of a known type
-        if irc_message["type"].upper() in known_types:
-            # Things that are the same for all known_types
-            irc_message["sender"] = irc_message["sender_header"].split("!")[0]
-
-            (user, host) = irc_message["sender_header"].split("!")[1].split("@")
-            irc_message["sender_username"] = user
-            irc_message["sender_host"] = host
-
-            # Special stuff for JOINs
-            if irc_message["type"].upper() == "JOIN":
-                if irc_message["recipient"][0] == ":":
-                    irc_message["recipient"] = irc_message["recipient"][1:]
-                
-                irc_message["room"] = irc_message["recipient"]
-
-            # Things that are the same for all but the above known_types    
-            else:
-                if irc_message["recipient"][0] == "#":
-                    irc_message["room"] = irc_message["recipient"]
-            
-            
-
+    # Parameters is everything following the command.
+    if len(message["data"]) > len(command):
+        parameters = message["data"][len(command):].strip()
     else:
-        return False
+        parameters = ""
 
-    return irc_message
+    # Responses to messages broadcast to rooms.
+    if message["recipient"] != HANDLE:
+
+        # Offer help to people using Watcher's !seen command.
+        if command == "!seen" and parameters.strip() != "":
+            looking_for = parameters.split(" ")[0]
+            reply = "%s: If you want to leave %s a message, I can do that for you. Just PM me." % (message["sender"], looking_for)
+            s.vsend(privmsg(message["room"], reply))
 
 
-### Functions for creating specific IRC command strings. ###
-# Parameters for these should be in the following order:
-#   recipient's nick, room (if applicable), message
+    # Responses to private messages sent to the bot.
+    if message["recipient"] == HANDLE:
 
-# Returns a PRIVMSG command complete with \r\n that you can just s.send()
-def privmsg(recipient, message):
-    return "PRIVMSG %s :%s\r\n" % (recipient, message)
+        user_commands = lower(["help", "tell", "read", "erase"])
 
-# Returns a KICK command string.
-def kick(nick, room, reason):
-    return "KICK %s %s %s\r\n" % (nick, room, reason)
+        # Administrative commands
+        if (message["sender"].lower() == MASTER_NICK.lower() and
+            command[0] == "!"):
 
-### End of functions for creating specific IRC command strings. ###
+            # !quit : QUIT
+            if command == "!quit":
+                s.send("QUIT\r\n")
+                sys.exit()
+
+
+            # !interesting : Print the last 20 interesting things.
+            if command == "!interesting":
+                things = file2list(sys.argv[0] + ".txt")
+
+                parameter_list = parameters.split(" ")
+
+                # First parameter is the number of things to see.
+                if parameters.split(" ")[0].isdigit():
+                    number_of_things = int(parameters.split(" ")[0])
+                else:
+                    number_of_things = 20
+
+                if len(things) > number_of_things:
+                    things = things[(0 - number_of_things):]
+
+                # Second parameter is the delay between messages.
+                new_delay = DELAY
+
+                if len(parameter_list) > 1:
+                    if isfloat(parameter_list[1]):
+                        new_delay = float(parameter_list[1])
+                    
+
+                # Display the interesting things.
+                s.vsend(privmsg(message["sender"], "*** Displaying %s interesting lines. Delay between each = %s seconds. ***" % ( len(things), new_delay ) ) )
+
+                for thing in things:
+                    s.vsend(privmsg(message["sender"], thing))
+                    time.sleep(new_delay)
+
+            return False
+
+        # Respond to unrecognized commands.
+        if command.lower() not in user_commands:
+            reply = "Hello there, %s. Type \"help\" if you need instructions." % message["sender"]
+            s.vsend(privmsg(message["sender"], reply))
+
+        # Valid commands go here.
+        else:
+            user_error = False
+
+            # "help" displays help.
+            if command == "help":
+                help_text = """Available commands:
+                               %(commands)s
+                               Send a user a message: tell username such and such message
+                               Send a group of users a message: tell @groupname such and such message
+                               Read your messages: read
+                               Erase all your messages: erase
+                               ---
+                               Currently available groups are: %(groups)s
+                               ---
+                               Be aware that the owner of this bot (like the owner of this server) can read all the messages you send, so please do not send anything private or sensitive.
+                               ---
+                               %(handle)s is run by me, %(master_nick)s. Please let me know if you want to be removed from %(handle)s's alerts or group messages. You can even use %(handle)s to contact me!
+                               ---
+                               Do not use this bot to spam other users or you will be added to the blacklist.""" % {
+                               "commands": user_commands, 
+                               "groups": NICK_GROUPS.keys(),
+                               "handle": HANDLE,
+                               "master_nick": MASTER_NICK,
+                               }
+
+                for line in help_text.split("\n"):
+                    if line.strip() != "":
+                        s.vsend(privmsg(message["sender"], line.strip()))
+                        time.sleep(DELAY)
+
+            # "tell" sends messages.
+            elif command == "tell" and len(parameters.split(" ")) > 1:
+                message_recipient = parameters.split(" ")[0]
+                message_to_send = parameters[len(message_recipient)+1:]
+
+                # Send a message to a group of users.
+                if message_recipient[0] == "@":
+                    recipients = NICK_GROUPS.get(message_recipient[1:])
+                    if recipients == None:
+                        s.vsend(privmsg(message["sender"], "That is an invalid group name."))
+                        return False
+                # Send a message to just one user.
+                else:
+                    recipients = [ message_recipient, ]
+
+                # Send the messages.
+                for recipient in recipients:
+                    record_message(message["sender"], recipient, message_to_send)
+
+                    time.sleep(DELAY)
+
+                # Notify the recipients that they have messages waiting.
+                for recipient in recipients:                                    
+                    s.vsend(privmsg(recipient, "You have a new message from %s. Say \"read\" to read your messages." % message["sender"]))
+                
+                    time.sleep(DELAY)
+
+                # Notify that the messages have been sent.    
+                s.vsend(privmsg(message["sender"], "Your message to %s has been sent!" % recipients))
+
+                    
+
+            # "read" displays stored messages.
+            elif command == "read":
+                user_messages = read_messages(message["sender"])
+                message_count = len(user_messages)
+
+                # vsend(privmsg(message["sender"], "*** You have %d messages. ***" % message_count))
+                # time.sleep(DELAY)
+
+                for m in user_messages:
+                    s.vsend(privmsg(message["sender"], m))
+                    time.sleep(DELAY)
+
+                if message_count > 0:
+                    s.vsend(privmsg(message["sender"], "*** End of messages. Say \"erase\" to erase all your messages. ***"))
+
+            # "erase" erases all messages.
+            elif command == "erase":
+                clear_messages(message["sender"])
+                s.vsend(privmsg(message["sender"], "*** Your messages have been erased. ***"))
+
+            # If the command was in user_commands but didn't meet
+            # one of these criteria, it was definitely an error.
+            else:
+                user_error = True
+
+            if user_error:
+                s.vsend(privmsg(message["sender"], "There was an error with your request. Please try again or say \"help\" for assistance."))
+
+        # Respond to anything with message count if the user has
+        # messages waiting. Anything except "erase" or "tell".
+        message_count = len(read_messages(message["sender"]))
+        if command not in user_commands or command == "read":
+            s.vsend(privmsg(message["sender"], "*** You have %d messages. ***" % message_count))
+            time.sleep(DELAY)
+
+# Decide what to do with data that is received from the server.
+def process_incoming_data(s):
+    try:
+        # Read received data into data_buffer, and in case we read in more
+        # than one message, split it for each line.
+        data_buffer = s.recv(1024).split("\n")
+        for data in data_buffer:
+
+            data = data.rstrip() # Clean whitespace off my data.
+            if data == "": continue # Ignore empty lines
+
+            print data # Display received data to the user
+
+            message = parse_irc_data(data)
+
+            # Only respond to messages understood by parse_irc_data().
+            if not message: continue
+
+            # The bot should never respond to a message it sends.
+            if message.get("sender") == HANDLE: continue
+
+
+            # Respond to server PING's
+            if message["type"] == "PING":
+                s.vsend("PONG :%s" % message["data"])
+                continue    # PING's need no further processing.
+
+            # Log interesting things.
+            interesting_things = [
+                ( "http://" in message["data"].lower() ),
+                ( "https://" in message["data"].lower() ),
+                ( "ftp://" in message["data"].lower() ),
+                ( "www." in message["data"].lower() ),
+                ( ".com" in message["data"].lower() ),
+                ( ".org" in message["data"].lower() ),
+                ( ".net" in message["data"].lower() ),
+                ( ".us" in message["data"].lower() ),
+                ( ".uk" in message["data"].lower() ),
+                ( ".au" in message["data"].lower() ),
+                ( ".nz" in message["data"].lower() ),
+                ( MASTER_NICK.lower() in message["data"].lower() ),
+            ]
+
+            if ( message["type"] == "PRIVMSG" 
+                 and message["sender"] != MASTER_NICK.lower()
+                 and message["sender"] != HANDLE ):
+
+                if (any(interesting_things)):
+                    log_entry = "[%(timestamp)s] %(sender)s->%(recipient)s: %(message)s" % {
+                        "timestamp": timestamp(),
+                        "sender": message["sender"],
+                        "recipient": message["recipient"],
+                        "message": message["data"],
+                    }
+
+                    log_append(log_entry)
+
+
+            # Since the white/blacklists are located below, messages from
+            # the server will cause errors if I don't filter them out.
+            if message["type"] != "JOIN" and message["type"] != "PRIVMSG":
+                continue
+
+            # Everything below here is available to whitelisted/
+            # non-blacklisted users only.
+            if not user_allowed(message["sender"]): continue
+
+
+            # Responses to users JOINing the current room.
+            if message["type"] == "JOIN":
+
+                # Greet all users who enter the room.
+                if GREET_JOINS:
+                    s.vsend(privmsg(message["recipient"], "Hello, %s." % message["sender"]))
+
+                # Notify the user if they have any new messages.
+                message_count = len(read_messages(message["sender"]))
+
+                if message_count > 0:
+                    s.vsend(privmsg(message["sender"], "*** You have %d messages. Type \"read\" to retrieve. ***" % message_count))
+
+
+            # Responses to PRIVMSGs to rooms or to the bot
+            if message["type"] == "PRIVMSG":
+                if not privmsg_actions(s, message): continue
+
+    except Exception, e:
+        print "-----\nERROR in the receiving thread:"
+        print e
+
+
+
+
 
 
 # Listens for incoming data and automatically responds where appropriate.
@@ -235,277 +414,9 @@ def listen(s):
     # Keeps track of how many times the same user was kicked.
     kick_counter = {}
 
-    # Verbose send.
-    # Sends data to the socket connection and prints it to the screen.
-    # Also handles aquiring and releasing the semaphore, sendLock.
-    def vsend(data, socket_instance=s):
-        print data.rstrip()
-        data += "\r\n"
 
-        sendLock.acquire()
-        socket_instance.send(data)
-        sendLock.release()
-
-
-    while s:
-        try:
-            # Read received data into data_buffer, and in case we read in more
-            # than one message, split it for each line.
-            data_buffer = s.recv(1024).split("\n")
-            for data in data_buffer:
-
-                data = data.rstrip() # Clean whitespace off my data.
-                if data == "": continue # Ignore empty lines
-
-                print data # Display received data to the user
-
-                message = parse_irc_data(data)
-
-                # Only respond to messages understood by parse_irc_data().
-                if not message: continue
-
-                # The bot should never respond to a message it sends.
-                if message.get("sender") == HANDLE: continue
-
-
-                # Respond to server PING's
-                if message["type"] == "PING":
-                    vsend("PONG :%s" % message["data"])
-                    continue    # PING's need no further processing.
-
-                # Log interesting things.
-                interesting_things = [
-                    ( "http://" in message["data"].lower() ),
-                    ( "https://" in message["data"].lower() ),
-                    ( "ftp://" in message["data"].lower() ),
-                    ( "www." in message["data"].lower() ),
-                    ( ".com" in message["data"].lower() ),
-                    ( ".org" in message["data"].lower() ),
-                    ( ".net" in message["data"].lower() ),
-                    ( ".us" in message["data"].lower() ),
-                    ( ".uk" in message["data"].lower() ),
-                    ( ".au" in message["data"].lower() ),
-                    ( ".nz" in message["data"].lower() ),
-                    ( MASTER_NICK.lower() in message["data"].lower() ),
-                ]
-
-                if ( message["type"] == "PRIVMSG" 
-                     and message["sender"] != MASTER_NICK.lower()
-                     and message["sender"] != HANDLE ):
-
-                    if (any(interesting_things)):
-                        log_entry = "[%(timestamp)s] %(sender)s->%(recipient)s: %(message)s" % {
-                            "timestamp": timestamp(),
-                            "sender": message["sender"],
-                            "recipient": message["recipient"],
-                            "message": message["data"],
-                        }
-
-                        log_append(log_entry)
-
-
-                # Since the white/blacklists are located below, messages from
-                # the server will cause errors if I don't filter them out.
-                if message["type"] != "JOIN" and message["type"] != "PRIVMSG":
-                    continue
-
-                # Everything below here is available to whitelisted/
-                # non-blacklisted users only.
-                if not user_allowed(message["sender"]): continue
-
-
-                # Responses to users JOINing the current room.
-                if message["type"] == "JOIN":
-
-                    # Greet all users who enter the room.
-                    if GREET_JOINS:
-                        vsend(privmsg(message["recipient"], "Hello, %s." % message["sender"]))
-
-                    # Notify the user if they have any new messages.
-                    message_count = len(read_messages(message["sender"]))
-
-                    if message_count > 0:
-                        vsend(privmsg(message["sender"], "*** You have %d messages. Type \"read\" to retrieve. ***" % message_count))
-
-
-                # Responses to PRIVMSGs to rooms or to the bot
-                if message["type"] == "PRIVMSG":
-
-                    # Break up the message data into the command (the first word)
-                    # and the parameters (all remaining words).
-
-                    # Commands should be lowercase/case insensitive.
-                    command = message["data"].split(" ")[0].lower()
-
-                    # Parameters is everything following the command.
-                    if len(message["data"]) > len(command):
-                        parameters = message["data"][len(command):].strip()
-                    else:
-                        parameters = ""
-
-                    # Responses to messages broadcast to rooms.
-                    if message["recipient"] != HANDLE:
-
-                        # Offer help to people using Watcher's !seen command.
-                        if command == "!seen" and parameters.strip() != "":
-                            looking_for = parameters.split(" ")[0]
-                            reply = "%s: If you want to leave %s a message, I can do that for you. Just PM me." % (message["sender"], looking_for)
-                            vsend(privmsg(message["room"], reply))
-
-
-                    # Responses to private messages sent to the bot.
-                    if message["recipient"] == HANDLE:
-
-                        user_commands = lower(["help", "tell", "read", "erase"])
-
-                        # Administrative commands
-                        if (message["sender"].lower() == MASTER_NICK.lower() and
-                            command[0] == "!"):
-
-                            # !quit : QUIT
-                            if command == "!quit":
-                                s.send("QUIT\r\n")
-                                sys.exit()
-
-
-                            # !interesting : Print the last 20 interesting things.
-                            if command == "!interesting":
-                                things = file2list(sys.argv[0] + ".txt")
-
-                                parameter_list = parameters.split(" ")
-
-                                # First parameter is the number of things to see.
-                                if parameters.split(" ")[0].isdigit():
-                                    number_of_things = int(parameters.split(" ")[0])
-                                else:
-                                    number_of_things = 20
-
-                                if len(things) > number_of_things:
-                                    things = things[(0 - number_of_things):]
-
-                                # Second parameter is the delay between messages.
-                                new_delay = DELAY
-
-                                if len(parameter_list) > 1:
-                                    if isfloat(parameter_list[1]):
-                                        new_delay = float(parameter_list[1])
-                                    
-
-                                # Display the interesting things.
-                                vsend(privmsg(message["sender"], "*** Displaying %s interesting lines. Delay between each = %s seconds. ***" % ( len(things), new_delay ) ) )
-
-                                for thing in things:
-                                    vsend(privmsg(message["sender"], thing))
-                                    time.sleep(new_delay)
-
-                            continue
-
-                        # Respond to unrecognized commands.
-                        if command.lower() not in user_commands:
-                            reply = "Hello there, %s. Type \"help\" if you need instructions." % message["sender"]
-                            vsend(privmsg(message["sender"], reply))
-
-                        # Valid commands go here.
-                        else:
-                            user_error = False
-
-                            # "help" displays help.
-                            if command == "help":
-                                help_text = """Available commands:
-                                               %(commands)s
-                                               Send a user a message: tell username such and such message
-                                               Send a group of users a message: tell @groupname such and such message
-                                               Read your messages: read
-                                               Erase all your messages: erase
-                                               ---
-                                               Currently available groups are: %(groups)s
-                                               ---
-                                               Be aware that the owner of this bot (like the owner of this server) can read all the messages you send, so please do not send anything private or sensitive.
-                                               ---
-                                               %(handle)s is run by me, %(master_nick)s. Please let me know if you want to be removed from %(handle)s's alerts or group messages. You can even use %(handle)s to contact me!
-                                               ---
-                                               Do not use this bot to spam other users or you will be added to the blacklist.""" % {
-                                               "commands": user_commands, 
-                                               "groups": NICK_GROUPS.keys(),
-                                               "handle": HANDLE,
-                                               "master_nick": MASTER_NICK,
-                                               }
-
-                                for line in help_text.split("\n"):
-                                    if line.strip() != "":
-                                        vsend(privmsg(message["sender"], line.strip()))
-                                        time.sleep(DELAY)
-
-                            # "tell" sends messages.
-                            elif command == "tell" and len(parameters.split(" ")) > 1:
-                                message_recipient = parameters.split(" ")[0]
-                                message_to_send = parameters[len(message_recipient)+1:]
-
-                                # Send a message to a group of users.
-                                if message_recipient[0] == "@":
-                                    recipients = NICK_GROUPS.get(message_recipient[1:])
-                                    if recipients == None:
-                                        vsend(privmsg(message["sender"], "That is an invalid group name."))
-                                        continue
-                                # Send a message to just one user.
-                                else:
-                                    recipients = [ message_recipient, ]
-
-                                # Send the messages.
-                                for recipient in recipients:
-                                    record_message(message["sender"], recipient, message_to_send)
-
-                                    time.sleep(DELAY)
-
-                                # Notify the recipients that they have messages waiting.
-                                for recipient in recipients:                                    
-                                    vsend(privmsg(recipient, "You have a new message from %s. Say \"read\" to read your messages." % message["sender"]))
-                                
-                                    time.sleep(DELAY)
-
-                                # Notify that the messages have been sent.    
-                                vsend(privmsg(message["sender"], "Your message to %s has been sent!" % recipients))
-
-                                    
-
-                            # "read" displays stored messages.
-                            elif command == "read":
-                                user_messages = read_messages(message["sender"])
-                                message_count = len(user_messages)
-
-                                # vsend(privmsg(message["sender"], "*** You have %d messages. ***" % message_count))
-                                # time.sleep(DELAY)
-
-                                for m in user_messages:
-                                    vsend(privmsg(message["sender"], m))
-                                    time.sleep(DELAY)
-
-                                if message_count > 0:
-                                    vsend(privmsg(message["sender"], "*** End of messages. Say \"erase\" to erase all your messages. ***"))
-
-                            # "erase" erases all messages.
-                            elif command == "erase":
-                                clear_messages(message["sender"])
-                                vsend(privmsg(message["sender"], "*** Your messages have been erased. ***"))
-
-                            # If the command was in user_commands but didn't meet
-                            # one of these criteria, it was definitely an error.
-                            else:
-                                user_error = True
-
-                            if user_error:
-                                vsend(privmsg(message["sender"], "There was an error with your request. Please try again or say \"help\" for assistance."))
-
-                        # Respond to anything with message count if the user has
-                        # messages waiting. Anything except "erase" or "tell".
-                        message_count = len(read_messages(message["sender"]))
-                        if command not in user_commands or command == "read":
-                            vsend(privmsg(message["sender"], "*** You have %d messages. ***" % message_count))
-                            time.sleep(DELAY)
-
-        except Exception, e:
-            print "-----\nERROR in the receiving thread:"
-            print e
+    while s: 
+        process_incoming_data(s)
 
     return
 
@@ -517,7 +428,7 @@ def main():
 
     try:
         ip = socket.gethostbyname(SERVER)
-        s = socket.socket()
+        s = IrcSocket() #socket.socket()
         s.connect((ip, PORT))
 
         print "CONNECTED TO %s" % SERVER
@@ -542,10 +453,10 @@ def main():
         startup_commands.append("PRIVMSG %s :%s online." % (MASTER_NICK, HANDLE))
 
         for cmd in startup_commands:
-            sendLock.acquire()
+            #sendLock.acquire()
             print cmd
             s.send(cmd + "\r\n")
-            sendLock.release()
+            #sendLock.release()
 
             time.sleep(STARTUP_DELAY)
 
