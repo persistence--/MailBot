@@ -3,7 +3,7 @@
 settings = {  ###### USER-DEFINED SETTINGS START BELOW ################
 
 # The server and port the bot should connect to.
-"SERVER": "www.ircserver.com",
+"SERVER": "irc.server.com",
 "PORT": 6667,
 
 # The bot's name on the server. Also used as username and real name.
@@ -16,7 +16,7 @@ settings = {  ###### USER-DEFINED SETTINGS START BELOW ################
 # The nick of the bot's owner. This user will be able to send the bot commands.
 # This user will also receive a private message from the bot once the bot
 # connects to the server.
-"MASTER_NICK": "yournickhere", # Your real nick goes here to control the bot.
+"MASTER_NICK": "your_nick_here", # Your real nick goes here to control the bot.
 "MASTER_NICK_PASSWORD": "", # Password used to authenticate admin commands.
 
 # Auto-join these rooms on connect. It's ok to leave empty.
@@ -27,6 +27,10 @@ settings = {  ###### USER-DEFINED SETTINGS START BELOW ################
 
 # Delay between initial connection commands to the server.
 "STARTUP_DELAY": 1.0,
+
+# Automatically re-connect to the server if disconnected.
+"AUTO_RECONNECT": True,
+"AUTO_RECONNECT_DELAY": 5.0,
 
 # Whether or not broadcast a greeting in the room when users join.
 "GREET_JOINS": False,

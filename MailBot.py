@@ -4,46 +4,37 @@
 ##  MailBot  ##  created by: persistence                                    ##
 ##############################################################################
 
-import socket       # To build the connection.
 import threading    # For the listening thread.
 import time         # For delays between commands on connect.
 import sys          # For sys.exit().
-from datetime import datetime   # For timestamps.
 
 from lib.data_manipulation import *
 from lib.irc import *
+from lib.timestamp import *
 
 # Import user settings by creating global variables from all the keys in the
 # settings dictionary from MailBot_settings.py
-import MailBot_settings 
-settings = MailBot_settings.settings
-
-for variable in settings.keys():
-    value = settings[variable]
-
-    if type(value) == type("string"):
-        value = '"%s"' % value
-    
-    set_value = "global %s ; %s = %s" % (variable, variable, value)
-
-    exec set_value
-
+from MailBot_settings import settings
 
 # Global variables that should not be changed by the user. (Not settings.)
 ENABLE_IRC_COMMANDS = True
+_verified_nicks = {}
 
-# This semaphore keeps multiple streams of data from being sent
-# simultaneously.
-#sendLock = threading.Semaphore(value=1)
+# Loads the settings imported from the settings file.
+def load_settings(settings):
+    for variable in settings.keys():
+        value = settings[variable]
 
-# All nicknames are converted to lowercase to fix case-sensitivity.
-#MASTER_NICK = MASTER_NICK.lower()
+        if type(value) == type("string"):
+            value = '"%s"' % value
+        
+        set_value = "global %s ; %s = %s" % (variable, variable, value)
 
-
+        exec set_value
 
 
 # Kills all threads
-def really_quit():
+def kill_all_threads():
     # Terminate running threads
     for thread in threading.enumerate():
         if thread.isAlive():
@@ -51,19 +42,6 @@ def really_quit():
                 thread._Thread__stop()
             except:
                 print(str(thread.getName()) + ' could not be terminated')
-    sys.exit()
-
-
-# Returns a human readable timestamp string: YYYY-MM-DD hh:mm:ss
-def timestamp():
-    timestamp = "%(year)04d-%(month)02d-%(day)02d %(hour)02d:%(minute)02d:%(second)02d" % {
-                "year": datetime.now().year,
-                "month": datetime.now().month,
-                "day": datetime.now().day,
-                "hour": datetime.now().hour,
-                "minute": datetime.now().minute,
-                "second": datetime.now().second, }
-    return timestamp   
          
 
 # Logs messages that are sent directly to the bot (as opposed to
@@ -73,17 +51,6 @@ def log_append(message):
     log_file = open(log_filename, 'a')
     log_file.write(message + "\n")
     log_file.close()
-
-
-# Reads a file into a list, stripping \r's and \n's along the way.
-def file2list(filename):
-    f = open(filename, 'r')
-    l = f.readlines()
-
-    for n in range(len(l)):
-        l[n] = l[n].rstrip()
-
-    return l
 
 
 # Compares a username to the white and blacklists.
@@ -160,6 +127,19 @@ def privmsg_actions(s, message):
             s.vsend(privmsg(message["room"], reply))
 
 
+    # Testing user verification with PM's
+    if message["recipient"] == HANDLE:
+        s.vsend("WHOIS %s" % message["sender"])
+
+        time.sleep(5)
+
+        registered_nick = _verified_nicks.get(message["sender"])
+        if registered_nick != None:
+            s.vsend(privmsg(message["sender"], "I see you are logged in as %s" %\
+                                               registered_nick))
+        else:
+            s.vsend(privmsg(message["sender"], "You are not logged in with this nick."))
+
     # Responses to private messages sent to the bot.
     if message["recipient"] == HANDLE:
 
@@ -171,8 +151,15 @@ def privmsg_actions(s, message):
 
             # !quit : QUIT
             if command == "!quit":
+                global AUTO_RECONNECT
+                AUTO_RECONNECT = False
+                
                 s.send("QUIT\r\n")
-                sys.exit()
+                kill_all_threads()
+
+            # !break : What happens if I break this?
+            if command == "!break":
+                s.close()
 
 
             # !interesting : Print the last 20 interesting things.
@@ -280,9 +267,6 @@ def privmsg_actions(s, message):
                 user_messages = read_messages(message["sender"])
                 message_count = len(user_messages)
 
-                # vsend(privmsg(message["sender"], "*** You have %d messages. ***" % message_count))
-                # time.sleep(DELAY)
-
                 for m in user_messages:
                     s.vsend(privmsg(message["sender"], m))
                     time.sleep(DELAY)
@@ -311,47 +295,36 @@ def privmsg_actions(s, message):
             time.sleep(DELAY)
 
 # Decide what to do with data that is received from the server.
-def process_incoming_data(s):
+def process_incoming_data(s, message):
     try:
-        # Read received data into data_buffer, and in case we read in more
-        # than one message, split it for each line.
-        data_buffer = s.recv(1024).split("\n")
-        for data in data_buffer:
 
-            data = data.rstrip() # Clean whitespace off my data.
-            if data == "": continue # Ignore empty lines
-
-            print data # Display received data to the user
-
-            message = parse_irc_data(data)
-
-            # Only respond to messages understood by parse_irc_data().
-            if not message: continue
 
             # The bot should never respond to a message it sends.
-            if message.get("sender") == HANDLE: continue
+            if message.get("sender") == HANDLE: return
 
 
             # Respond to server PING's
             if message["type"] == "PING":
                 s.vsend("PONG :%s" % message["data"])
-                continue    # PING's need no further processing.
+                return    # PING's need no further processing.
 
-            # Log interesting things.
-            interesting_things = [
-                ( "http://" in message["data"].lower() ),
-                ( "https://" in message["data"].lower() ),
-                ( "ftp://" in message["data"].lower() ),
-                ( "www." in message["data"].lower() ),
-                ( ".com" in message["data"].lower() ),
-                ( ".org" in message["data"].lower() ),
-                ( ".net" in message["data"].lower() ),
-                ( ".us" in message["data"].lower() ),
-                ( ".uk" in message["data"].lower() ),
-                ( ".au" in message["data"].lower() ),
-                ( ".nz" in message["data"].lower() ),
-                ( MASTER_NICK.lower() in message["data"].lower() ),
-            ]
+            # Log interesting messages regardless of sender/recipient.
+            if message["type"] == "PRIVMSG":
+                # Log interesting things.
+                interesting_things = [
+                    ( "http://" in message["data"].lower() ),
+                    ( "https://" in message["data"].lower() ),
+                    ( "ftp://" in message["data"].lower() ),
+                    ( "www." in message["data"].lower() ),
+                    ( ".com" in message["data"].lower() ),
+                    ( ".org" in message["data"].lower() ),
+                    ( ".net" in message["data"].lower() ),
+                    ( ".us" in message["data"].lower() ),
+                    ( ".uk" in message["data"].lower() ),
+                    ( ".au" in message["data"].lower() ),
+                    ( ".nz" in message["data"].lower() ),
+                    ( MASTER_NICK.lower() in message["data"].lower() ),
+                ]
 
             if ( message["type"] == "PRIVMSG" 
                  and message["sender"] != MASTER_NICK.lower()
@@ -367,15 +340,21 @@ def process_incoming_data(s):
 
                     log_append(log_entry)
 
+            # Keep track of users who are logged in for ID verification.
+            if message["type"] == "330":
+                global _verified_nicks
+                _verified_nicks[message["registered_nick"]] = \
+                    message["current_nick"]
+                print "VERIFIED USERS: %s" % _verified_nicks
 
             # Since the white/blacklists are located below, messages from
             # the server will cause errors if I don't filter them out.
             if message["type"] != "JOIN" and message["type"] != "PRIVMSG":
-                continue
+                return
 
             # Everything below here is available to whitelisted/
             # non-blacklisted users only.
-            if not user_allowed(message["sender"]): continue
+            if not user_allowed(message["sender"]): return
 
 
             # Responses to users JOINing the current room.
@@ -394,11 +373,14 @@ def process_incoming_data(s):
 
             # Responses to PRIVMSGs to rooms or to the bot
             if message["type"] == "PRIVMSG":
-                if not privmsg_actions(s, message): continue
+                if not privmsg_actions(s, message): return
 
     except Exception, e:
-        print "-----\nERROR in the receiving thread:"
-        print e
+        error_message = "-----\nERROR in the receiving thread:\n%s" % e
+        print error_message
+        log_append(error_message)
+        #if e.errno == 107:
+
 
 
 
@@ -414,83 +396,132 @@ def listen(s):
     # Keeps track of how many times the same user was kicked.
     kick_counter = {}
 
+    while s:
+        try:
+            # Read received data into data_buffer, and in case we read in more
+            # than one message, split it for each line.
+            data_buffer = s.recv(1024).split("\n")
+            for data in data_buffer:
 
-    while s: 
-        process_incoming_data(s)
+                data = data.rstrip() # Clean whitespace off my data.
+                if data == "": continue # Ignore empty lines
 
+                print data # Display received data to the user
+
+                message = parse_irc_data(data)
+
+                # Only respond to messages understood by parse_irc_data().
+                if message: 
+                    process_incoming_data(s, message)
+        except:
+            pass
     return
+
+# Listens for commands from the terminal and passes them on to the IRC server.
+def terminal_input(s):
+    # Wait for user input on the console
+    while True:
+        user_in = raw_input("")
+
+        # Execute python code preceded with >
+        if user_in[0] == ">":
+            exec(user_in[1:])
+
+        # User defined commands
+        elif user_in == "!ENABLE":
+            ENABLE_IRC_COMMANDS = True
+            print "<<< IRC commands have been ENABLED. >>>"
+        elif user_in == "!DISABLE":
+            ENABLE_IRC_COMMANDS = False
+            print "<<< IRC commands have been DISABLED. >>>"
+
+        # Commands that should be passed on to the server.
+        else:    
+            # Handle manually entered QUIT command
+            if user_in[0:4].upper() == "QUIT":
+                global AUTO_RECONNECT
+                AUTO_RECONNECT = False
+
+                s.vsend("QUIT")
+                kill_all_threads()
+            else:                
+                s.send(user_in + "\r\n")
+
+
+
 
 
 def main():
+    load_settings(settings)
     global ENABLE_IRC_COMMANDS
 
-    log_append("====== [%s] %s online. ======" % (timestamp(), HANDLE))
+    # Infinite loop that will be broken if AUTO_RECONNECT is not True.
+    while True:
 
-    try:
-        ip = socket.gethostbyname(SERVER)
-        s = IrcSocket() #socket.socket()
-        s.connect((ip, PORT))
+        log_append("====== [%s] %s online. ======" % (timestamp(), HANDLE))
 
-        print "CONNECTED TO %s" % SERVER
-
-        t = threading.Thread(target=listen, args=(s,))
-        t.start()
-
-        # Stuff to do after connecting...
-        startup_commands = ["NICK %s" % HANDLE,
-                            "USER %(handle)s 8 * : %(handle)s" % {"handle": HANDLE}, ]        
-
-        # This is just junk to help with making sure I am registered, which I
-        # have broken somehow. Hopefully this can be removed eventually.
-        #startup_commands.append("PRIVMSG NickServ HELP")
-
-        if HANDLE_PASSWORD != "":
-            startup_commands.append("PRIVMSG NickServ identify %s" % HANDLE_PASSWORD)
-
-        for room in ROOMS:
-            startup_commands.append("JOIN %s" % room)
-
-        startup_commands.append("PRIVMSG %s :%s online." % (MASTER_NICK, HANDLE))
-
-        for cmd in startup_commands:
-            #sendLock.acquire()
-            print cmd
-            s.send(cmd + "\r\n")
-            #sendLock.release()
-
-            time.sleep(STARTUP_DELAY)
-
-        # Wait for user input on the console
-        while True:
-            user_in = raw_input("")
-
-            # User defined commands
-            if user_in == "!ENABLE":
-                ENABLE_IRC_COMMANDS = True
-                print "<<< IRC commands have been ENABLED. >>>"
-            elif user_in == "!DISABLE":
-                ENABLE_IRC_COMMANDS = False
-                print "<<< IRC commands have been DISABLED. >>>"
-
-            # Commands that should be passed on to the server.
-            else:    
-                s.send(user_in + "\r\n")
-
-                # Handle manually entered QUIT command
-                if user_in[0:4].upper() == "QUIT":
-                    really_quit()
-
-    except Exception, e:
-        print "-----\nERROR in the main function:"
-        print e
-    finally:
         try:
-            s.send("QUIT")
-        except:
-            pass
-        s.close()
+            ip = socket.gethostbyname(SERVER)
+            s = IrcSocket() #socket.socket()
+            s.settimeout(1)
+            s.connect((ip, PORT))
 
-        exit()
+            print "CONNECTED TO %s" % SERVER
+
+            listening_thread = threading.Thread(target=listen, args=(s,))
+            listening_thread.start()
+
+            # Stuff to do after connecting...
+            startup_commands = ["NICK %s" % HANDLE,
+                                "USER %(handle)s 8 * : %(handle)s" % {"handle": HANDLE}, ]        
+
+            # This is just junk to help with making sure I am registered, which I
+            # have broken somehow. Hopefully this can be removed eventually.
+            #startup_commands.append("PRIVMSG NickServ HELP")
+
+            if HANDLE_PASSWORD != "":
+                startup_commands.append("PRIVMSG NickServ identify %s" % HANDLE_PASSWORD)
+
+            for room in ROOMS:
+                startup_commands.append("JOIN %s" % room)
+
+            startup_commands.append("PRIVMSG %s :%s online." % (MASTER_NICK, HANDLE))
+
+            for cmd in startup_commands:
+                s.vsend(cmd)
+                time.sleep(STARTUP_DELAY)
+
+            terminal_input_thread = threading.Thread(target=terminal_input, 
+                                                     args=(s,))
+            terminal_input_thread.start()
+
+            # Check that all threads are still running ok.
+            while True:
+                if not (listening_thread.isAlive() and 
+                        terminal_input_thread.isAlive()):
+                    kill_all_threads()
+                    break
+                time.sleep(1)
+
+        except Exception, e:
+            error_message = "-----\nERROR in the main function:\n%s" % e
+            log_append(error_message)
+        finally:
+            try:
+                s.vsend("QUIT")
+            except:
+                pass
+            s.close()
+
+        # Auto-reconnect to the server unless this quit was intentional.
+        if not AUTO_RECONNECT:
+            sys.exit()
+        else:
+            error_message = \
+                "\n\n[%s] Disconnected. Reconnecting in %s seconds...\n" % \
+                (timestamp(), AUTO_RECONNECT_DELAY)
+            log_append(error_message)
+            time.sleep(AUTO_RECONNECT_DELAY)
 
 
 if __name__ == "__main__":

@@ -33,6 +33,10 @@ class IrcSocket(socket.socket):
 #               sender:             The user who sent the message
 #               sender_username:    Username of the sender               
 #               sender_host:        Hostname/IP of the sender
+#
+#               # Special type 330 - user ID verification.
+#               current_nick        The current nick a user is using/
+#               registered_nick     The nick the user is logged in as.
 # }
 def parse_irc_data(data):
     irc_message = {}
@@ -46,6 +50,11 @@ def parse_irc_data(data):
         irc_message["type"] = parts[1].upper()
         irc_message["recipient"] = parts[2]
         if len(parts) > 3: irc_message["data"] = " ".join(parts[3:]).lstrip()[1:]
+
+        # 330: WHOIS response that a user is logged in.
+        if irc_message["type"] == "330":
+            irc_message["current_nick"] = parts[3]
+            irc_message["registered_nick"] = parts[4]
 
         known_types = ['PRIVMSG', 'JOIN', 'PART', 'ACTION']
 

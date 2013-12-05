@@ -1,4 +1,4 @@
-# MailBot v0.23
+# MailBot v0.25
 
 by: **persistence**
 
@@ -15,7 +15,6 @@ An IRC bot used to send messages to one or more users who are offline.
 
 * **Mention logging for the owner** - Log each time the owner's name is mentioned so they will know if someone was looking for them but did not leave a message.
 
-
 ## Advantages over memoserv:
 
 * More obvious interface for new users unfamiliar with IRC.
@@ -29,27 +28,7 @@ An IRC bot used to send messages to one or more users who are offline.
 
 ## Features to add:
 
-* **Auto-reconnect** (or resurrect) - If MailBot is disconnected from the server, it currently has no way to reconnect. It needs to automatically reconnect if disconnected for any reason (kick/error). Reconnect should happen possibly after a delay.
-
-    Possible solution example:
-
-        KEEP_RUNNING = True
-        
-        if __name__ == "__main__":
-            while KEEP_RUNNING:
-                try:
-                    main()
-                except Exception, e:
-                    log_error(e)
-
-                kill_all_threads()        
-                time.sleep(RECONNECT_DELAY)
-                
-        # Function to call to quit (command sent by admin)
-        def really_quit():
-            global KEEP_RUNNING
-            KEEP_RUNNING = False
-            sys.exit()
+* **Error logging** - Need a function for displaying output instead of print so that all server messages will be logged as they are displayed. Also need to move the interesting log to a different file than the error log.
 
 * **NickServ/WHOIS verification** - Verify user identities (if that user is registered) before allowing them to send/receive messages.
 
@@ -85,6 +64,8 @@ Basic stuff.
 
 
 ## Old bugs fixed in this version:
+
+* All threads and main process now exit cleanly on quits and !QUITs.
 
 * Timestamps now force two digit minimum for all fields.
 
