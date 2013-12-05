@@ -1,4 +1,4 @@
-# MailBot v0.25
+# MailBot v0.26
 
 by: **persistence**
 
@@ -15,16 +15,17 @@ An IRC bot used to send messages to one or more users who are offline.
 
 * **Mention logging for the owner** - Log each time the owner's name is mentioned so they will know if someone was looking for them but did not leave a message.
 
+* **Registered User Identification** - Users must register their nick with NickServ in order to use MailBot. Identity is checked on every command received.
+
 ## Advantages over memoserv:
 
 * More obvious interface for new users unfamiliar with IRC.
 
-* Nicks do not need to be registered/identified to send and receive messages. (Could be a good or a bad thing depending on your perspective.)
+* Depending on settings, nicks do not need to be registered/identified to send and receive messages. (Could be a good or a bad thing depending on your perspective.)
 
 * Can be run by a non-operator or non-server-admin user independently of the underlying IRC server.
 
 * Non-messaging features like mention logging and URL logging.
-
 
 ## Features to add:
 

@@ -104,7 +104,7 @@ def clear_messages(nick):
     f.close
 
 # Handle received PRIVMSG's
-def privmsg_actions(s, message):
+def privmsg_actions(s, message, retry=False):
     # Break up the message data into the command (the first word)
     # and the parameters (all remaining words).
 
@@ -126,17 +126,25 @@ def privmsg_actions(s, message):
             reply = "%s: If you want to leave %s a message, I can do that for you. Just PM me." % (message["sender"], looking_for)
             s.vsend(privmsg(message["room"], reply))
 
+    # From here on out, commands are available to registered users only.
+    if REGISTERED_USERS_ONLY:
+        # Testing user verification with PM's
+        if message["recipient"] == HANDLE:
+            s.vsend("WHOIS %s" % message["sender"])
 
-    # Testing user verification with PM's
-    # if message["recipient"] == HANDLE:
-    #     s.vsend("WHOIS %s" % message["sender"])
+            while receive_data(s, end_on_type="318"):
+                pass
+        
+            registered_nick = _verified_nicks.get(message["sender"])
 
-    #     registered_nick = _verified_nicks.get(message["sender"])
-    #     if registered_nick != None:
-    #         s.vsend(privmsg(message["sender"], "I see you are logged in as %s" %\
-    #                                            registered_nick))
-    #     else:
-    #         s.vsend(privmsg(message["sender"], "You are not logged in with this nick."))
+            if registered_nick == None:
+                s.vsend(privmsg(message["sender"], "You need to identify with NickServ to use %s. \"/msg NickServ help\" for more information." % HANDLE))
+                return
+
+        #s.vsend(privmsg(message["sender"], "I see you are logged in as %s" %\
+        #                                          registered_nick))
+    else:
+        registered_nick = message["sender"]
 
     # Responses to private messages sent to the bot.
     if message["recipient"] == HANDLE:
@@ -338,11 +346,18 @@ def process_incoming_data(s, message):
 
                     log_append(log_entry)
 
+            # Type 311 should always mark the beginning of a WHOIS.
+            # Verified nicks should be cleared every time a WHOIS is run.
+            if message["type"] == "311":
+                global _verified_nicks
+                _verified_nicks = {}
+
             # Keep track of users who are logged in for ID verification.
             if message["type"] == "330":
                 global _verified_nicks
-                _verified_nicks[message["registered_nick"]] = \
-                    message["current_nick"]
+                _verified_nicks = {}
+                _verified_nicks[message["current_nick"]] = \
+                    message["registered_nick"]
                 print "VERIFIED USERS: %s" % _verified_nicks
 
             # Since the white/blacklists are located below, messages from
@@ -371,7 +386,9 @@ def process_incoming_data(s, message):
 
             # Responses to PRIVMSGs to rooms or to the bot
             if message["type"] == "PRIVMSG":
-                if not privmsg_actions(s, message): return
+                action_result = privmsg_actions(s, message)
+                if not action_result: return
+
 
     except Exception, e:
         error_message = "-----\nERROR in the receiving thread:\n%s" % e
@@ -382,7 +399,30 @@ def process_incoming_data(s, message):
 
 
 
+def receive_data(s, end_on_type = None):
+        # Read received data into data_buffer, and in case we read in more
+        # than one message, split it for each line.
+        data_buffer = s.recv(1024).split("\n")
+        messages = []
 
+        for data in data_buffer:
+
+            data = data.rstrip() # Clean whitespace off my data.
+            if data == "": continue # Ignore empty lines
+
+            print data # Display received data to the user
+
+            message = parse_irc_data(data)            
+
+            if end_on_type != None:
+                if message["type"] == end_on_type:
+                    return False
+
+            # Only respond to messages understood by parse_irc_data().
+            if message: 
+                process_incoming_data(s, message)
+
+        return True
 
 
 # Listens for incoming data and automatically responds where appropriate.
@@ -396,21 +436,7 @@ def listen(s):
 
     while s:
         try:
-            # Read received data into data_buffer, and in case we read in more
-            # than one message, split it for each line.
-            data_buffer = s.recv(1024).split("\n")
-            for data in data_buffer:
-
-                data = data.rstrip() # Clean whitespace off my data.
-                if data == "": continue # Ignore empty lines
-
-                print data # Display received data to the user
-
-                message = parse_irc_data(data)
-
-                # Only respond to messages understood by parse_irc_data().
-                if message: 
-                    process_incoming_data(s, message)
+            receive_data(s)
         except:
             pass
     return

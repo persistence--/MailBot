@@ -19,6 +19,9 @@ settings = {  ###### USER-DEFINED SETTINGS START BELOW ################
 "MASTER_NICK": "your_nick_here", # Your real nick goes here to control the bot.
 "MASTER_NICK_PASSWORD": "", # Password used to authenticate admin commands.
 
+# Disable MailBot for users not identified with NickServ. Increases security.
+"REGISTERED_USERS_ONLY": True, 
+
 # Auto-join these rooms on connect. It's ok to leave empty.
 "ROOMS": [ "#bots" ], 
 

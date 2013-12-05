@@ -10,9 +10,7 @@ class IrcSocket(socket.socket):
         print data.rstrip()
         data += "\r\n"
 
-        #sendLock.acquire()
         self.send(data)
-        #sendLock.release()
 
 
 # Given a string of data from the IRC server, returns a dictionary containing
@@ -35,7 +33,7 @@ class IrcSocket(socket.socket):
 #               sender_host:        Hostname/IP of the sender
 #
 #               # Special type 330 - user ID verification.
-#               current_nick        The current nick a user is using/
+#               current_nick        The current nick a user is using.
 #               registered_nick     The nick the user is logged in as.
 # }
 def parse_irc_data(data):
