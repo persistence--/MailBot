@@ -128,17 +128,15 @@ def privmsg_actions(s, message):
 
 
     # Testing user verification with PM's
-    if message["recipient"] == HANDLE:
-        s.vsend("WHOIS %s" % message["sender"])
+    # if message["recipient"] == HANDLE:
+    #     s.vsend("WHOIS %s" % message["sender"])
 
-        time.sleep(5)
-
-        registered_nick = _verified_nicks.get(message["sender"])
-        if registered_nick != None:
-            s.vsend(privmsg(message["sender"], "I see you are logged in as %s" %\
-                                               registered_nick))
-        else:
-            s.vsend(privmsg(message["sender"], "You are not logged in with this nick."))
+    #     registered_nick = _verified_nicks.get(message["sender"])
+    #     if registered_nick != None:
+    #         s.vsend(privmsg(message["sender"], "I see you are logged in as %s" %\
+    #                                            registered_nick))
+    #     else:
+    #         s.vsend(privmsg(message["sender"], "You are not logged in with this nick."))
 
     # Responses to private messages sent to the bot.
     if message["recipient"] == HANDLE:
@@ -463,7 +461,7 @@ def main():
         try:
             ip = socket.gethostbyname(SERVER)
             s = IrcSocket() #socket.socket()
-            s.settimeout(1)
+            #s.settimeout(1)
             s.connect((ip, PORT))
 
             print "CONNECTED TO %s" % SERVER
